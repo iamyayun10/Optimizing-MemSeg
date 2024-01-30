@@ -17,7 +17,6 @@ DATASET:
   min_perlin_scale: 0
   perlin_noise_threshold: 0.5
 
-DATALOADER:
   batch_size: 8
   num_workers: 0
 
@@ -30,7 +29,7 @@ MODEL:
 TRAIN:
   batch_size: 8
   num_training_steps: 5000
-  l1_weight: 0.6
+  l1smooth_weight: 0.6
   focal_weight: 0.4
   focal_alpha: null
   focal_gamma: 4

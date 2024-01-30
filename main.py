@@ -1,8 +1,9 @@
 import wandb
-import logging
+import logging 
 import os
 import torch
 import torch.nn as nn
+import torchvision.models as models
 import argparse
 
 from omegaconf import OmegaConf
@@ -14,7 +15,6 @@ from train import training
 from log import setup_default_logging
 from utils import torch_seed
 from scheduler import CosineAnnealingWarmupRestarts
-
 
 _logger = logging.getLogger('train')
 
@@ -41,7 +41,7 @@ def run(cfg):
     # build datasets
     trainset = create_dataset(
         datadir                = cfg.DATASET.datadir,
-        target                 = cfg.DATASET.target, 
+        target                 = cfg.DATASET.target,
         is_train               = True,
         resize                 = cfg.DATASET.resize,
         texture_source_dir     = cfg.DATASET.texture_source_dir,
@@ -92,7 +92,8 @@ def run(cfg):
         pretrained    = True, 
         features_only = True
     ).to(device)
-    ## freeze weight of layer1,2,3
+    
+    # freeze weight of layer1,2,3
     for l in ['layer1','layer2','layer3']:
         for p in feature_extractor[l].parameters():
             p.requires_grad = False
@@ -115,7 +116,7 @@ def run(cfg):
     ).to(device)
 
     # Set training
-    l1_criterion = nn.L1Loss()
+    l1smooth_criterion = nn.SmoothL1Loss()
     f_criterion = FocalLoss(
         gamma = cfg.TRAIN.focal_gamma, 
         alpha = cfg.TRAIN.focal_alpha
@@ -144,8 +145,8 @@ def run(cfg):
         num_training_steps = cfg.TRAIN.num_training_steps, 
         trainloader        = trainloader, 
         validloader        = testloader, 
-        criterion          = [l1_criterion, f_criterion], 
-        loss_weights       = [cfg.TRAIN.l1_weight, cfg.TRAIN.focal_weight],
+        criterion          = [l1smooth_criterion, f_criterion],
+        loss_weights       = [cfg.TRAIN.l1smooth_weight, cfg.TRAIN.focal_weight],
         optimizer          = optimizer,
         scheduler          = scheduler,
         log_interval       = cfg.LOG.log_interval,
@@ -154,7 +155,6 @@ def run(cfg):
         device             = device,
         use_wandb          = cfg.TRAIN.use_wandb
     )
-
 
 
 if __name__=='__main__':

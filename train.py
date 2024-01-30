@@ -10,6 +10,9 @@ import numpy as np
 from typing import List
 from sklearn.metrics import roc_auc_score
 from metrics import compute_pro, trapezoid
+import pandas as pd
+import os
+
 
 _logger = logging.getLogger('train')
 
@@ -33,17 +36,17 @@ class AverageMeter:
 
 
 def training(model, trainloader, validloader, criterion, optimizer, scheduler, num_training_steps: int = 1000, loss_weights: List[float] = [0.6, 0.4], 
-             log_interval: int = 1, eval_interval: int = 1, savedir: str = None, use_wandb: bool = False, device: str ='cpu') -> dict:   
+             log_interval: int = 1, eval_interval: int = 1, savedir: str = None, use_wandb: bool = False, device: str ='cuda') -> dict:   
 
     batch_time_m = AverageMeter()
     data_time_m = AverageMeter()
     losses_m = AverageMeter()
-    l1_losses_m = AverageMeter()
+    l1smooth_losses_m = AverageMeter()
     focal_losses_m = AverageMeter()
 
     # criterion
-    l1_criterion, focal_criterion = criterion
-    l1_weight, focal_weight = loss_weights
+    l1smooth_criterion, focal_criterion = criterion
+    l1smooth_weight, focal_weight = loss_weights
     
     # set train mode
     model.train()
@@ -61,15 +64,19 @@ def training(model, trainloader, validloader, criterion, optimizer, scheduler, n
         for inputs, masks, targets in trainloader:
             # batch
             inputs, masks, targets = inputs.to(device), masks.to(device), targets.to(device)
-
+            
             data_time_m.update(time.time() - end)
 
             # predict
             outputs = model(inputs)
             outputs = F.softmax(outputs, dim=1)
-            l1_loss = l1_criterion(outputs[:,1,:], masks)
+            
+            masks = masks.to(device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'), dtype=torch.long)
+
+
+            l1smooth_loss = l1smooth_criterion(outputs[:,1,:], masks)
             focal_loss = focal_criterion(outputs, masks)
-            loss = (l1_weight * l1_loss) + (focal_weight * focal_loss)
+            loss = (l1smooth_weight * l1smooth_loss) + (focal_weight * focal_loss)
 
             loss.backward()
             
@@ -78,9 +85,9 @@ def training(model, trainloader, validloader, criterion, optimizer, scheduler, n
             optimizer.zero_grad()
 
             # log loss
-            l1_losses_m.update(l1_loss.item())
+            l1smooth_losses_m.update(l1smooth_loss)
             focal_losses_m.update(focal_loss.item())
-            losses_m.update(loss.item())
+            losses_m.update(loss)
             
             batch_time_m.update(time.time() - end)
 
@@ -89,7 +96,7 @@ def training(model, trainloader, validloader, criterion, optimizer, scheduler, n
                 wandb.log({
                     'lr':optimizer.param_groups[0]['lr'],
                     'train_focal_loss':focal_losses_m.val,
-                    'train_l1_loss':l1_losses_m.val,
+                    'train_l1smooth_loss':l1smooth_losses_m.val,
                     'train_loss':losses_m.val
                 },
                 step=step)
@@ -97,14 +104,14 @@ def training(model, trainloader, validloader, criterion, optimizer, scheduler, n
             if (step+1) % log_interval == 0 or step == 0: 
                 _logger.info('TRAIN [{:>4d}/{}] '
                             'Loss: {loss.val:>6.4f} ({loss.avg:>6.4f}) '
-                            'L1 Loss: {l1_loss.val:>6.4f} ({l1_loss.avg:>6.4f}) '
+                            'L1smooth Loss: {l1smooth_loss.val:>6.4f} ({l1smooth_loss.avg:>6.4f}) '
                             'Focal Loss: {focal_loss.val:>6.4f} ({focal_loss.avg:>6.4f}) '
                             'LR: {lr:.3e} '
                             'Time: {batch_time.val:.3f}s, {rate:>7.2f}/s ({batch_time.avg:.3f}s, {rate_avg:>7.2f}/s) '
                             'Data: {data_time.val:.3f} ({data_time.avg:.3f})'.format(
                             step+1, num_training_steps, 
                             loss       = losses_m, 
-                            l1_loss    = l1_losses_m,
+                            l1smooth_loss    = l1smooth_losses_m,
                             focal_loss = focal_losses_m,
                             lr         = optimizer.param_groups[0]['lr'],
                             batch_time = batch_time_m,
@@ -133,6 +140,10 @@ def training(model, trainloader, validloader, criterion, optimizer, scheduler, n
                     state = {'best_step':step}
                     state.update(eval_log)
                     json.dump(state, open(os.path.join(savedir, 'best_score.json'),'w'), indent='\t')
+
+                    best_score_df = pd.DataFrame([state])
+                    csv_path = os.path.join(savedir, 'best_score.csv')
+                    best_score_df.to_csv(csv_path, index=False)
 
                     # save best model
                     torch.save(model.state_dict(), os.path.join(savedir, f'best_model.pt'))
@@ -212,6 +223,5 @@ def evaluate(model, dataloader, device: str = 'cpu'):
 
     _logger.info('TEST: AUROC-image: %.3f%% | AUROC-pixel: %.3f%% | AUPRO-pixel: %.3f%%' % 
                 (metrics['AUROC-image'], metrics['AUROC-pixel'], metrics['AUPRO-pixel']))
-
 
     return metrics
