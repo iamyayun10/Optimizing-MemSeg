@@ -1,5 +1,6 @@
 **Environments**
-Docker image: nvcr.io/nvidia/pytorch:20.12-py3
+
+- Docker image: nvcr.io/nvidia/pytorch:20.12-py3
 
 ```bash
 einops==0.5.0
