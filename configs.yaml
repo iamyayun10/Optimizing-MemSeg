@@ -29,8 +29,8 @@ MODEL:
 TRAIN:
   batch_size: 8
   num_training_steps: 5000
-  l1smooth_weight: 0.6
-  focal_weight: 0.4
+  l1smooth_weight: 0.4
+  focal_weight: 0.6
   focal_alpha: null
   focal_gamma: 4
   use_wandb: True
